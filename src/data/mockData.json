@@ -1,0 +1,29 @@
+{
+  "nodes": [
+    { 
+      "id": "1", 
+      "name": "Newton Mwangi", 
+      "department": "Computer Science", 
+      "val": 30,
+      "stats": { "publications": 12, "hIndex": 4, "citations": 45 },
+      "tags": ["Flutter", "React", "AI"],
+      "sdgs": [9]
+    },
+    { 
+      "id": "2", 
+      "name": "Dr. Lucy Wairimu", 
+      "department": "Economics", 
+      "val": 25,
+      "stats": { "publications": 29, "hIndex": 12, "citations": 150 },
+      "tags": ["Development Econ", "Policy Analysis", "Agri-Business"],
+      "sdgs": [1, 2, 8]
+    },
+    { "id": "3", "name": "K-SISP Project", "group": "project", "val": 40, "department": "Project" },
+    { "id": "4", "name": "Prof. Kamau", "department": "Public Health", "val": 20 }
+  ],
+  "links": [
+    { "source": "1", "target": "3" },
+    { "source": "2", "target": "3" },
+    { "source": "1", "target": "4" }
+  ]
+}
