@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with pgvector extension
+  postgres:
+    image: postgres:15-alpine
+    container_name: daystar-postgres
+    environment:
+      POSTGRES_DB: daystar_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=vector"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker-init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daystar-network
+
+  # Redis for Celery task queue
+  redis:
+    image: redis:7-alpine
+    container_name: daystar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - daystar-network
+
+  # Django web application
+  web:
+    build: .
+    container_name: daystar-web
+    command: sh -c "python manage.py migrate && gunicorn daystar_project.wsgi --bind 0.0.0.0:8000 --workers 4"
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/daystar_db
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=False
+      - SECRET_KEY=django-insecure-change-me-in-production
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    networks:
+      - daystar-network
+
+  # Celery Worker for asynchronous tasks
+  celery-worker:
+    build: .
+    container_name: daystar-celery-worker
+    command: celery -A daystar_project worker -l info --concurrency=4
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/daystar_db
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=False
+      - SECRET_KEY=django-insecure-change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    networks:
+      - daystar-network
+
+  # Celery Beat for periodic/scheduled tasks
+  celery-beat:
+    build: .
+    container_name: daystar-celery-beat
+    command: celery -A daystar_project beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/daystar_db
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=False
+      - SECRET_KEY=django-insecure-change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    networks:
+      - daystar-network
+
+  # Nginx reverse proxy (optional, for production-like setup)
+  nginx:
+    image: nginx:alpine
+    container_name: daystar-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+    networks:
+      - daystar-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  daystar-network:
+    driver: bridge
