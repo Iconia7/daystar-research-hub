@@ -65,7 +65,7 @@ class Command(BaseCommand):
                     if len(name) < 4:
                         continue
 
-                    # 4. Generate Unique Email (Fixes the Crash)
+                    # 4. Generate Unique Email
                     # We generate a slug. If that slug is taken by SOMEONE ELSE, we append numbers.
                     slug = name.replace(' ', '.').replace(',', '').replace("'", "").lower()
                     email = f"{slug}@daystar.ac.ke"

@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-3mchm2^6)hj9sc4*y+vnwxw-+m1^nupq_ew7dsd!v$_1zpj9)a'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['5.189.178.132', 'daystar.nexoracreatives.co.ke', 'localhost']
 
 
 # Application definition
@@ -104,6 +104,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://5.189.178.132",
+    "http://daystar.nexoracreatives.co.ke",
 ]
 
 

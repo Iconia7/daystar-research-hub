@@ -3,7 +3,7 @@ import GraphCanvas from './features/graphs/GraphCanvas';
 import { 
   Search, Share2, Sparkles, X, Briefcase, Globe, 
   Network, Users, FolderOpen, Lightbulb, ChevronDown, 
-  Mail, ExternalLink
+  Mail, ExternalLink, Filter
 } from 'lucide-react';
 
 /* --- SUB-COMPONENTS --- */
@@ -26,6 +26,7 @@ const ResearchersView = ({ data }) => (
          </div>
       </div>
     ))}
+    {data.length === 0 && <div className="col-span-full text-center text-white/50 mt-10">No researchers found matching criteria.</div>}
   </div>
 );
 
@@ -48,6 +49,7 @@ const ProjectsView = ({ data }) => (
            <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-black"><ExternalLink size={20}/></button>
         </div>
       ))}
+      {data.length === 0 && <div className="text-center text-white/50 mt-10">No projects found matching criteria.</div>}
     </div>
 );
 
@@ -86,27 +88,65 @@ function App() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [activeTab, setActiveTab] = useState('graph');
 
-  // 1. FETCH GRAPH DATA & OPPORTUNITIES
+  // --- 1. SEARCH & FILTER STATE ---
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDept, setSelectedDept] = useState("All Departments");
+
+  // Fetch Data
   useEffect(() => {
-    // Fetch Graph
-    fetch('http://localhost:8000/api/graph/')
+    fetch('/api/graph/')
       .then(res => res.json())
       .then(setData)
       .catch(err => console.error("Graph API Error:", err));
 
-    // Fetch Opportunities
-    fetch('http://localhost:8000/api/opportunities/')
+    fetch('/api/opportunities/')
       .then(res => res.json())
       .then(setOpportunities)
       .catch(err => console.error("Opp API Error:", err));
   }, []);
 
-  // 2. CALCULATE LIVE STATS (The "Quick Stats" Sidebar)
+  // --- 2. DYNAMIC DEPARTMENTS LIST ---
+  // Extract unique departments from the data for the dropdown
+  const departments = useMemo(() => {
+    const depts = new Set(data.nodes.map(n => n.department).filter(d => d && d !== 'Project' && d !== 'Unassigned'));
+    return ["All Departments", ...Array.from(depts).sort()];
+  }, [data]);
+
+  // --- 3. FILTERING LOGIC ---
+  // This filters both the Graph and the Lists based on Search + Dropdown
+  const filteredData = useMemo(() => {
+    if (!data.nodes.length) return { nodes: [], links: [] };
+
+    // Filter Nodes
+    const filteredNodes = data.nodes.filter(node => {
+        // Search Match
+        const searchLower = searchQuery.toLowerCase();
+        const matchesSearch = 
+            (node.name && node.name.toLowerCase().includes(searchLower)) ||
+            (node.department && node.department.toLowerCase().includes(searchLower)) ||
+            (node.tags && node.tags.some(tag => tag.toLowerCase().includes(searchLower)));
+
+        // Department Match
+        const matchesDept = selectedDept === "All Departments" || node.department === selectedDept;
+
+        return matchesSearch && matchesDept;
+    });
+
+    // Filter Links (Only keep links where both source/target exist in filteredNodes)
+    const activeNodeIds = new Set(filteredNodes.map(n => n.id));
+    const filteredLinks = data.links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return activeNodeIds.has(sourceId) && activeNodeIds.has(targetId);
+    });
+
+    return { nodes: filteredNodes, links: filteredLinks };
+  }, [data, searchQuery, selectedDept]);
+
+  // --- 4. GLOBAL STATS (Calculated on ALL data, not filtered) ---
   const stats = useMemo(() => {
     const researchers = data.nodes.filter(n => n.group === 'person');
     const projects = data.nodes.filter(n => n.group === 'project');
-    
-    // Sum up all publications from researcher stats
     const totalPapers = researchers.reduce((acc, curr) => acc + (curr.stats?.publications || 0), 0);
     
     return {
@@ -120,7 +160,7 @@ function App() {
   return (
     <div className="flex h-screen w-screen bg-[#25aae1] text-slate-100 overflow-hidden font-sans selection:bg-purple-500/30">
       
-      {/* LEFT SIDEBAR (Dynamic Stats) */}
+      {/* LEFT SIDEBAR */}
       <div className="w-72 flex-none border-r border-white/10 bg-[#25aae1] flex flex-col z-20 shadow-2xl">
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -134,7 +174,7 @@ function App() {
           </div>
         </div>
 
-        {/* Dynamic Quick Stats */}
+        {/* Quick Stats (Always shows total DB size) */}
         <div className="p-6">
           <div className="flex items-center gap-2 mb-4">
              <div className="h-4 w-1 bg-purple-500 rounded-full"></div>
@@ -148,7 +188,7 @@ function App() {
           </div>
         </div>
 
-        {/* Dynamic Opportunities List */}
+        {/* Opportunities List */}
         <div className="px-6 mt-2 flex-1 overflow-y-auto">
            <div className="flex items-center gap-2 mb-4">
              <div className="h-4 w-1 bg-blue-500 rounded-full"></div>
@@ -160,12 +200,11 @@ function App() {
                     key={op.id}
                     initials1={op.r1_initials || "A"} 
                     initials2={op.r2_initials || "B"} 
-                    names={`${op.r1_name.split(' ')[0]} & ${op.r2_name.split(' ')[0]}`} // Short names
+                    names={`${op.r1_name.split(' ')[0]} & ${op.r2_name.split(' ')[0]}`}
                     topic={op.topic} 
                     score={`${op.match_score}%`} 
                  />
              ))}
-             {opportunities.length === 0 && <p className="text-xs text-white/50">Loading opportunities...</p>}
            </div>
         </div>
       </div>
@@ -173,19 +212,47 @@ function App() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col relative bg-[#25aae1]">
         
-        {/* Top Navigation */}
+        {/* TOP NAVIGATION (SEARCH & FILTER) */}
         <div className="h-16 border-b border-white/10 bg-[#25aae1]/50 backdrop-blur-md flex items-center justify-between px-6 z-10">
+           
+           {/* Search Bar */}
            <div className="flex items-center bg-white/20 px-4 py-2 rounded-xl border border-white/10 w-96 text-sm focus-within:bg-white/30 transition-all duration-300">
               <Search size={16} className="mr-3 text-white" />
-              <input type="text" placeholder="Search researchers, topics..." className="bg-transparent border-none outline-none w-full placeholder-white/70 text-white" />
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search researchers, topics, methods..." 
+                className="bg-transparent border-none outline-none w-full placeholder-white/70 text-white" 
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="ml-2 text-white hover:text-red-300"><X size={14}/></button>
+              )}
            </div>
+
+           {/* Filter Dropdown */}
            <div className="flex gap-3">
-              <FilterDropdown label="All Departments" />
-              <FilterDropdown label="All SDGs" />
+              <div className="relative group">
+                  <button className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-white/20 border border-white/10 rounded-xl text-white hover:bg-white/30 transition-all">
+                    {selectedDept} <ChevronDown size={14} />
+                  </button>
+                  {/* Custom Dropdown Menu */}
+                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden hidden group-hover:block z-50">
+                    {departments.map(dept => (
+                        <button 
+                            key={dept} 
+                            onClick={() => setSelectedDept(dept)}
+                            className={`w-full text-left px-4 py-3 text-xs font-medium hover:bg-slate-50 transition-colors ${selectedDept === dept ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}
+                        >
+                            {dept}
+                        </button>
+                    ))}
+                  </div>
+              </div>
            </div>
         </div>
 
-        {/* Tabs */}
+        {/* Feature Tabs */}
         <div className="px-6 pt-4 pb-0 bg-white border-b border-slate-200">
             <div className="flex gap-6">
                 <TabButton active={activeTab === 'graph'} onClick={() => setActiveTab('graph')} icon={<Network size={16}/>} label="Network Graph" />
@@ -195,23 +262,25 @@ function App() {
             </div>
         </div>
 
-        {/* Content Views */}
+        {/* Content Views (Using FILTERED Data) */}
         <div className="flex-1 relative overflow-hidden">
            
            {activeTab === 'graph' && (
               <>
-                <GraphCanvas data={data} onNodeClick={setSelectedNode} />
+                <GraphCanvas data={filteredData} onNodeClick={setSelectedNode} />
                 
+                {/* Overlays */}
                 <div className="absolute top-6 left-6 pointer-events-none z-10">
                    <div className="bg-white/95 backdrop-blur border border-slate-200 p-5 rounded-2xl shadow-xl max-w-xs pointer-events-auto">
                        <h4 className="text-sm font-bold text-black mb-2">Interactive Network</h4>
                        <ul className="text-xs text-slate-500 space-y-2">
                            <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Click nodes to view details</li>
                            <li className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Drag nodes to rearrange</li>
+                           <li className="flex items-center gap-2 text-slate-400 mt-2 pt-2 border-t border-slate-100">Showing {filteredData.nodes.length} Results</li>
                        </ul>
                    </div>
                 </div>
-
+                
                 <div className="absolute bottom-6 left-6 pointer-events-none z-10">
                    <div className="bg-white/95 backdrop-blur border border-slate-200 p-4 rounded-xl shadow-xl pointer-events-auto">
                        <h4 className="text-[10px] font-bold text-black uppercase tracking-widest mb-3">Departments</h4>
@@ -226,8 +295,8 @@ function App() {
               </>
            )}
 
-           {activeTab === 'researchers' && <ResearchersView data={data.nodes.filter(n => n.group !== 'project')} />}
-           {activeTab === 'projects' && <ProjectsView data={data.nodes.filter(n => n.group === 'project')} />}
+           {activeTab === 'researchers' && <ResearchersView data={filteredData.nodes.filter(n => n.group !== 'project')} />}
+           {activeTab === 'projects' && <ProjectsView data={filteredData.nodes.filter(n => n.group === 'project')} />}
            {activeTab === 'opportunities' && <OpportunitiesView opportunities={opportunities} />}
         </div>
       </div>
@@ -248,7 +317,6 @@ function App() {
            </div>
 
            <div className="p-6 space-y-8 overflow-y-auto flex-1">
-              {/* Using Real Stats from Backend */}
               <div className="grid grid-cols-3 gap-3">
                  <DetailStatBox label="Publications" value={selectedNode.stats?.publications || 0} color="text-emerald-400" />
                  <DetailStatBox label="h-index" value={selectedNode.stats?.hIndex || 0} color="text-amber-400" />
@@ -301,7 +369,7 @@ const TabButton = ({ active, onClick, icon, label }) => (
         {icon} {label}
     </button>
 );
-const FilterDropdown = ({ label }) => ( <button className="flex items-center gap-2 px-4 py-2 text-xs font-medium bg-white/20 border border-white/10 rounded-xl text-white hover:bg-white/30 transition-all">{label} <ChevronDown size={14} /></button> );
+// Removed FilterDropdown because we implemented it inline for full functionality
 const DashboardCard = ({ label, value, color = "text-black" }) => ( <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100"><div className={`text-2xl font-bold ${color}`}>{value}</div><div className="text-[10px] text-slate-500 font-medium uppercase mt-1">{label}</div></div> );
 const SuggestionCard = ({ initials1, initials2, names, topic, score }) => ( <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-all cursor-pointer group"><div className="flex items-center justify-between mb-3"><div className="flex -space-x-2"><div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold ring-2 ring-white text-white">{initials1}</div><div className="h-8 w-8 rounded-full bg-lime-500 flex items-center justify-center text-xs font-bold text-black ring-2 ring-white">{initials2}</div></div><Sparkles size={14} className="text-purple-500 group-hover:animate-pulse" /></div><p className="text-sm font-semibold text-black">{names}</p><p className="text-[11px] text-slate-500">{topic}</p><div className="mt-2 text-[10px] bg-purple-100 text-purple-700 inline-block px-2 py-1 rounded border border-purple-200">{score} Match</div></div> );
 const DetailStatBox = ({ label, value, color }) => ( <div className="bg-[#1e293b]/50 p-3 rounded-xl text-center border border-white/10"><div className={`text-xl font-bold ${color}`}>{value}</div><div className="text-[10px] text-slate-500 font-medium">{label}</div></div> );
